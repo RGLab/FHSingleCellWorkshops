@@ -1,0 +1,242 @@
+---
+title: "Course 3 - Session 2: Hands-On Workshop in scRNA Sequence Analysis"
+author: 'Valentin Voillet, Greg Finak and Raphael Gottardo'
+output:
+  html_document:
+    theme: lumen
+    toc: true
+    toc_float: true
+    number_sections: true
+    df_print: paged
+---
+
+<style>
+body{text-align: justify}
+pre code, pre, code {
+  white-space: pre !important;
+  overflow-x: scroll !important;
+  word-break: keep-all !important;
+  word-wrap: initial !important;
+}
+</style>
+
+```{r echo=FALSE, eval=TRUE, message=FALSE, warning=FALSE}
+library(here)
+load(here("Workshop4",'Feb2018_clustering.RData'))
+# save.image('Feb2018_clustering.RData')
+```
+
+# About the course
+__________________
+
+One of the most interesting applications of scRNA-seq is *de novo* discovery and annotation of cell-types based on transcription profiles. Many clustering methods have already been developed for single-cell (Bacher and Kendziorski, 2016). In this course, we will briefly discuss of four clustering methods (non-exhaustive list). We mostly use default values in various function calls, for more details please consult the documentation and the authors.  
+
+
+
+
+# Installation / Packages
+_________________________
+
+```{r echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(Seurat)
+#data at
+# https://www.dropbox.com/s/q53aelvzlpuyerk/PBMC_tutorial.rds?dl=0
+# https://www.dropbox.com/s/kqap9fyc7ab5viy/Feb2018_clustering.RData?dl=0
+```
+
+As in session 1, we will be analyzing a dataset of Peripheral Blood Mononuclear Cells (PBMC) available from 10x Genomics and downloaded from the Seurat tutorial. Let's load the already pre-processed `seurat` object (see Workshop session 1 for more information) - see https://github.com/RGLab/FHSingleCellWorkshops to download the object.  
+
+```{r echo=TRUE, eval=FALSE, message=FALSE, warning=FALSE}
+###--- Load previous seurat object
+PBMC <- readRDS(here('Workshop4','PBMC_tutorial.rds')) # Object available on Github: https://github.com/RGLab/FHSingleCellWorkshops
+```
+
+
+
+
+# Comparison between clustering methods
+_______________________________________
+
+Unsupervised clustering is useful in many different applications and it has been widely studied in machine learning. Some of the most popular approaches are:  
+
+* __hierarchical clustering__ - is a method of cluster analysis which seeks to build a hierarchy of clusters.  
+
+* __k-means clustering__ - the goal is to partition N cells into k different clusters. In an iterative manner, cluster centers are assigned and each cell is assigned to its nearest cluster. Most methods for scRNA-seq analysis includes a k-means step at some point.  
+
+* __graph-based clustering__ - is to identify groups or modules of nodes in a network. Some of these methods can be applied to scRNA-seq data by building a graph where each node represents a cell. Note that constructing the graph and assigning weights to the edges is not trivial. One advantage of graph-based methods is that some of them are very efficient and can be applied to networks containing millions of nodes.  
+
+Several tools have been developed for single-cell RNA-seq data - quick overview of some of them (non-exhaustive list). We mostly use default values in various function calls, for more details please consult the documentation and the authors.   
+
+## Seurat - Graph-based clustering
+
+See session 1 for more information. Briefly, **`Seurat`** first constructs a KNN graph based on the euclidean distance in PCA space, and refines the edge weights between any two cells based on the shared overlap in their local neighborhoods (Jaccard distance). To cluster the cells, it applies modularity optimization techniques (Blondel et al., 2008), to iteratively group cells together, with the goal of optimizing the standard modularity function. Modularity is designed to measure how well a network is divided into modules.  
+
+`FindClusters` implements the procedure, and contains a resolution parameter that sets the granularity of the downstream clustering, with increased values leading to a greater number of clusters. Seurat authors found that setting this parameter between 0.6-1.2 typically returns good results for single cell datasets of around 3,000 cells. Optimal resolution often increases for larger datasets. The clusters are saved in the `object@ident slot`.  
+
+Cells within the graph-based clusters determined above should co-localize on the tSNE plot. This is because the tSNE aims to place cells with similar local neighborhoods in high-dimensional space together in low-dimensional space.  
+Here, as proposed in the Seurat tutorial, we set a resolution of 0.6 and a number of neighbors of 30 (by default) - see session 1.  
+
+```{r echo=TRUE, eval=FALSE, message=FALSE, warning=FALSE}
+###--- Seurat - graph-based clustering
+#- Clustering
+PBMC <- FindClusters(object = PBMC, 
+                     reduction.type = 'pca', 
+                     dims.use = 1:10, 
+                     resolution = 0.6, 
+                     k.param = 30,
+                     print.output = 0, 
+                     save.SNN = TRUE) # save.SNN = T saves the SNN so that the clustering algorithm can be rerun using the same graph but with a different resolution value (see docs for full details)
+```
+```{r echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE}
+##-- tSNE - Clustering
+PBMC <- SetAllIdent(object = PBMC, id = 'res.0.6') # Annotation - tSNE visualization
+TSNEPlot(object = PBMC)
+```
+
+## tSNE + K-means
+
+The goal of K-means algorithm is to partition N cells into k different clusters. In an iterative manner, cluster centers are assigned and each cell is assigned to its nearest cluster.  
+
+* 1 - k initial means are randomly generated.  
+
+* 2 - k clusters are created by associating every observation with the nearest mean.  
+
+* 3 - The centroid of each of the k clusters becomes the new mean.  
+
+* 4 - Steps 2 and 3 are repeated until convergence has been reached.  
+
+&nbsp;&nbsp;&nbsp;&nbsp;  
+
+![](SCA_workshop_VV_kmeans.jpeg)
+&nbsp;&nbsp;&nbsp;&nbsp;  
+
+Based on the tSNE plot and graph-base clustering, we can observe about 6 - 8 clusters. We are going to apply k-means clustering algorithm using our top 10 PCs as input and `centers = 8` (number of clusters).  
+
+```{r echo=TRUE, eval=FALSE, message=FALSE, warning=FALSE}
+###--- K-means
+set.seed(1040)
+#- Clustering
+kmean_results <- kmeans(x = PBMC@dr$pca@cell.embeddings[, 1:10], # Top 10 PCs
+                        centers = 8, # Number of clusters
+                        iter.max = 100, # Maximum number of iterations allowed
+                        nstart = 100) # Number of random sets that should be chosen
+kmean_results$cluster # Access to clustering results
+
+#- Use of AddMetaData to add column to object@meta.data
+PBMC <- AddMetaData(object = PBMC, 
+                    metadata = kmean_results$cluster, 
+                    col.name = 'kmeans')
+```
+```{r echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE}
+##-- tSNE - Clustering
+PBMC <- SetAllIdent(object = PBMC, id = 'kmeans') # Annotation - tSNE visualization
+TSNEPlot(object = PBMC)
+```
+
+As you may have noticed, k-means clustering is stochastic and give different results every time they are run. To get a better overview of the solutions, you need to run the methods multiple times.  
+
+## SC3
+
+**`SC3`** (Kiselev et al., 2017) is an user-friendly tool for unsupervised clustering, which achieves high accuracy and robustness by combining multiple clustering solutions through a consensus approach. **`SC3`** is based on PCA and spectral dimensionality reductions and utilizes k-means. Additionally performs the consensus clustering.  
+
+* 1 - Expression matrix as input - `SingleCellExperiment` object.  
+
+* 2 - Gene filtering. The gene filter removes genes/transcripts that are either expressed (expression value > 2) in less than X% of cells (rare genes/transcripts) or expressed (expression value > 0) in at least (100 – X)% of cells (ubiquitous genes/transcripts). By default, X is set at 6. The motivation for the gene filter is that ubiquitous and rare genes are most often not informative for clustering.  
+
+* 3 - Distance calculations. Distances between the cells (i.e., columns) are calculated using the Euclidean, Pearson and Spearman metrics to construct distance matrices.
+
+* 4 - Transformations. All distance matrices are then transformed using either principal component analysis (PCA) or by calculating the eigenvectors of the associated graph Laplacian. The columns of the resulting matrices are then sorted in ascending order by their corresponding eigenvalues.  
+
+* 5 - k-means. k-means clustering is performed on the first d eigenvectors of the transformed distance matrices by using the default `kmeans` R function. By default, the maximum number of iterations is set to 10 and the number of starts is set to 1,000.  
+
+* 6 - Consensus clustering. SC3 computes a consensus matrix. For each individual clustering result, a binary similarity matrix is constructed from the corresponding cell labels: if two cells belong to the same cluster, their similarity is 1; otherwise the similarity is 0. A consensus matrix is calculated by averaging all similarity matrices of individual clusterings. The resulting consensus matrix is clustered using hierarchical clustering with complete agglomeration, and the clusters are inferred at the k level of hierarchy, where k is defined by the user.
+
+&nbsp;&nbsp;&nbsp;&nbsp;  
+
+![](SCA_workshop_VV_SC3.jpg)
+&nbsp;&nbsp;&nbsp;&nbsp;  
+
+Each step of the **`SC3`** pipeline (Figure) requires the user to specify a number of parameters, which can be difficult and **time-consuming** to optimize. To avoid this problem, **`SC3`** utilizes a parallelization approach whereby a significant subset of the parameter space is evaluated simultaneously to obtain a set of clusterings. **`SC3`** then combines all the different clustering outcomes into a consensus matrix that summarizes how often each pair of cells is located in the same cluster. The final result is determined by complete-linkage hierarchical clustering of the consensus matrix into k groups.  
+
+To run `sc3`, we have to set up a `SingleCellExperiment` object. **Do not run this function today.**  
+
+```{r echo=TRUE, eval=FALSE, message=FALSE, warning=FALSE}
+###--- SC3
+#- Installation
+source("https://bioconductor.org/biocLite.R")
+biocLite("SC3")
+biocLite("SingleCellExperiment")
+library(SC3)
+library(SingleCellExperiment)
+
+#- Setup SingleCellExperiment object - to run SC3 - need of SingleCellExperiment object type
+sce <- SingleCellExperiment(
+  assays = list(counts = as.matrix(PBMC@raw.data)[, colnames(PBMC@data)], # Raw data - after cell filtering
+                logcounts = as.matrix(PBMC@data)), # Normalized data - after cell filtering
+  colData = PBMC@meta.data, # Add meta.data information to SingleCellExperiment object
+  reducedDims = SimpleList(PCA = PBMC@dr$pca@cell.embeddings, # PCs from corrected-normalized data using Seurat
+                           tSNE = PBMC@dr$tsne@cell.embeddings) # tSNE  from corrected-normalized data using Seurat
+)
+rowData(sce)$feature_symbol <- rownames(sce) # Set feature_symbol - needed to run sc3
+
+#- Clustering - parameters by default
+sce <- sc3(sce, 
+           ks = 8) # Number of clusters
+
+#- Add sc3 clusters to meta.data - alternative way (no need of AddMetaData R function)
+PBMC@meta.data$sc3 <- colData(sce)$sc3_8_clusters
+```
+```{r echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE}
+##-- tSNE - Clustering
+PBMC <- SetAllIdent(object = PBMC, id = 'sc3') # Annotation - tSNE visualization
+TSNEPlot(object = PBMC)
+```
+
+## pcaReduce
+
+**`pcaReduce`** (Zurauskiene and Yau 2016) combines PCA, k-means and iterative hierarchical clustering. Starting from a large number of clusters pcaReduce iteratively merges similar clusters; after each merging event it removes the principle component explaining the least variance in the data.  
+
+As proposed by the authors, it is recommended to use a gene filter and log transformation before running **`pcaReduce`**. Here we will be using the highly variable genes detected by **`Seurat`**.
+
+```{r echo=TRUE, eval=FALSE, message=FALSE, warning=FALSE}
+###--- pcaReduce
+#- Installation
+install.packages('devtools')
+library(devtools)
+install_github('JustinaZ/pcaReduce')
+library(pcaReduce)
+
+#- Clustering
+input_pcaReduce <- PBMC@data[PBMC@var.genes, ] # Use only highly variable genes
+# Run pcaReduce 1 time creating hierarchies from 1 to 10 clusters
+pca.red <- PCAreduce(D_t = t(input_pcaReduce), 
+                     nbt = 1,  # Number of samples, i.e. number of times to repeat pcaReduce framework
+                     q = 10, # Number of dimensions to start with - top 10
+                     method = 'S') # Perform sampling based merging
+
+#- Add pcaReduce clusters to meta.data
+pca.red[[1]] # list of length nbt; each item in the list is a matrix containing cell allocation variables
+# The output will contain partitions for all k from 2 to q+1.
+PBMC@meta.data$pcaReduce <- pca.red[[1]][, 4] # Let's see w/ 8 clusters
+```
+```{r echo=TRUE, eval=TRUE, message=FALSE, warning=FALSE}
+##-- tSNE - Clustering
+PBMC <- SetAllIdent(object = PBMC, id = 'pcaReduce') # Annotation - tSNE visualization
+TSNEPlot(object = PBMC)
+```
+
+As you may have noticed, **`pcaReduce`** clustering is also stochastic and give different results every time they are run. To get a better overview of the solutions, you need to run the methods multiple times. This is not the best clustering tool.  
+
+
+
+
+
+
+
+
+
+
+
+
+
