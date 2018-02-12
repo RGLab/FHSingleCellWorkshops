@@ -243,13 +243,14 @@ pre code, pre, code {
 <hr />
 <pre class="r"><code>library(tidyverse)
 library(Seurat)
+library(here)
 #data at
 # https://www.dropbox.com/s/q53aelvzlpuyerk/PBMC_tutorial.rds?dl=0
 # https://www.dropbox.com/s/kqap9fyc7ab5viy/Feb2018_clustering.RData?dl=0
 </code></pre>
 <p>As in session 1, we will be analyzing a dataset of Peripheral Blood Mononuclear Cells (PBMC) available from 10x Genomics and downloaded from the Seurat tutorial. Let’s load the already pre-processed <code>seurat</code> object (see Workshop session 1 for more information) - see <a href="https://github.com/RGLab/FHSingleCellWorkshops" class="uri">https://github.com/RGLab/FHSingleCellWorkshops</a> to download the object.</p>
 <pre class="r"><code>###--- Load previous seurat object
-PBMC &lt;- readRDS('Download/PBMC_tutorial.rds') # Object available on Github: https://github.com/RGLab/FHSingleCellWorkshops</code></pre>
+PBMC &lt;- readRDS(here('Workshop4','PBMC_tutorial.rds')) # Object available on Github: https://github.com/RGLab/FHSingleCellWorkshops</code></pre>
 </div>
 <div id="comparison-between-clustering-methods" class="section level1">
 <h1><span class="header-section-number">3</span> Comparison between clustering methods</h1>
