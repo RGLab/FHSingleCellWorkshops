@@ -164,7 +164,7 @@ To run `sc3`, we have to set up a `SingleCellExperiment` object. **Do not run th
 ```{r echo=TRUE, eval=FALSE, message=FALSE, warning=FALSE}
 ###--- SC3
 #- Installation
-source("https://bioconductor.org/biocLite.R")
+#source("https://bioconductor.org/biocLite.R")
 #biocLite("SC3")
 #biocLite("SingleCellExperiment")
 library(SC3)
